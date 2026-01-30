@@ -92,7 +92,7 @@ cmd_uninstall() {
   echo "  sudo bash install.sh --uninstall"
   echo "from the directory where you have the project (where install.sh is)."
   echo "Or uninstall with (if you installed via one-liner):"
-  echo "  curl -sSL https://raw.githubusercontent.com/Kacoze/keepalive/main/install.sh | sudo bash -s -- --uninstall"
+  echo "  curl -sSL https://raw.githubusercontent.com/Kacoze/keepalive/master/install.sh | sudo bash -s -- --uninstall"
 }
 
 cmd_status() {

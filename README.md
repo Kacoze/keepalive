@@ -21,19 +21,19 @@ Install without cloning the repo. You may be prompted for your password when `su
 **Install (curl):**
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Kacoze/keepalive/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Kacoze/keepalive/master/install.sh | sudo bash
 ```
 
 **Install (wget):**
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/Kacoze/keepalive/main/install.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/Kacoze/keepalive/master/install.sh | sudo bash
 ```
 
 **Uninstall (same URL, with argument):**
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Kacoze/keepalive/main/install.sh | sudo bash -s -- --uninstall
+curl -sSL https://raw.githubusercontent.com/Kacoze/keepalive/master/install.sh | sudo bash -s -- --uninstall
 ```
 
 ## Installation (from repo)
