@@ -18,12 +18,14 @@ fi
 # Uninstall
 if [ "$1" = "--uninstall" ]; then
   SCRIPT_PATH="$USER_HOME/.local/bin/keepalive.sh"
+  SYMLINK_PATH="$USER_HOME/.local/bin/keepalive"
   DESKTOP_FILE="$USER_HOME/.local/share/applications/keepalive.desktop"
   SUDOERS_FILE="/etc/sudoers.d/keepalive-nopasswd"
   CONFIG_DIR="$USER_HOME/.config/keepalive"
 
   echo "--- Uninstalling KeepAlive ---"
   [ -f "$SUDOERS_FILE" ] && { rm -f "$SUDOERS_FILE"; echo "Removed sudoers entry."; } || echo "Sudoers file not found (already removed?)."
+  [ -L "$SYMLINK_PATH" ] && { rm -f "$SYMLINK_PATH"; echo "Removed symlink $SYMLINK_PATH"; } || true
   [ -f "$SCRIPT_PATH" ] && { rm -f "$SCRIPT_PATH"; echo "Removed $SCRIPT_PATH"; } || echo "Main script not found."
   [ -f "$DESKTOP_FILE" ] && { rm -f "$DESKTOP_FILE"; echo "Removed desktop entry."; update-desktop-database "$USER_HOME/.local/share/applications/" 2>/dev/null; } || echo "Desktop entry not found."
   [ -d "$CONFIG_DIR" ] && { rm -rf "$CONFIG_DIR"; echo "Removed config directory."; }
@@ -33,6 +35,11 @@ fi
 
 # When run from pipe (e.g. curl ... | sudo bash), show a short message
 [[ ! -t 0 ]] && echo "Installing KeepAlive…"
+
+if ! command -v apt-get &>/dev/null; then
+  echo "This installer expects Debian/Ubuntu (apt-get)."
+  exit 1
+fi
 
 echo "--- Installing dependencies ---"
 apt-get update -qq
@@ -63,10 +70,14 @@ validate_time() {
 load_config() {
   TARGET_HOUR="14:00"
   WAKE_UP_TIME="08:00"
+  KEEPALIVE_INTERVAL=30
+  ALERT_BEFORE_SEC=120
   [ -f "$CONFIG_FILE" ] || return 0
   while IFS= read -r line; do
     [[ "$line" =~ ^TARGET_HOUR=(.*)$ ]] && TARGET_HOUR="${BASH_REMATCH[1]}"
     [[ "$line" =~ ^WAKE_UP_TIME=(.*)$ ]] && WAKE_UP_TIME="${BASH_REMATCH[1]}"
+    [[ "$line" =~ ^KEEPALIVE_INTERVAL=(.*)$ ]] && KEEPALIVE_INTERVAL="${BASH_REMATCH[1]}"
+    [[ "$line" =~ ^ALERT_BEFORE_SEC=(.*)$ ]] && ALERT_BEFORE_SEC="${BASH_REMATCH[1]}"
   done < "$CONFIG_FILE"
 }
 
@@ -80,6 +91,8 @@ cmd_uninstall() {
   echo "To uninstall KeepAlive, run:"
   echo "  sudo bash install.sh --uninstall"
   echo "from the directory where you have the project (where install.sh is)."
+  echo "Or uninstall with (if you installed via one-liner):"
+  echo "  curl -sSL https://raw.githubusercontent.com/Kacoze/keepalive/main/install.sh | sudo bash -s -- --uninstall"
 }
 
 cmd_status() {
@@ -135,6 +148,7 @@ cmd_config() {
 }
 
 cmd_run() {
+  load_config
   local end_arg="" wake_arg=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -143,6 +157,17 @@ cmd_run() {
       *)       shift ;;
     esac
   done
+
+  mkdir -p "$CONFIG_DIR"
+  if [ -f "$PID_FILE" ]; then
+    read -r pid < "$PID_FILE"
+    until_time=$(sed -n '2p' "$PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Already running (until ${until_time:-?})." >&2
+      exit 1
+    fi
+    rm -f "$PID_FILE"
+  fi
 
   if [ -n "$end_arg" ] && [ -n "$wake_arg" ]; then
     TARGET_HOUR="$end_arg"
@@ -171,6 +196,21 @@ cmd_run() {
   [ "$TARGET_SEC" -le "$CURRENT_SEC" ] && TARGET_SEC=$(date -d "tomorrow $TARGET_HOUR" +%s)
   ALERT_SHOWN=false
 
+  for cmd in xdotool zenity rtcwake; do
+    if ! command -v "$cmd" &>/dev/null; then
+      if [ -n "${DISPLAY:-}" ]; then
+        zenity --error --text="Missing required command: $cmd"
+      else
+        echo "Missing required command: $cmd" >&2
+      fi
+      exit 1
+    fi
+  done
+  if [ -z "${DISPLAY:-}" ]; then
+    echo "DISPLAY is not set; zenity and xdotool require X11." >&2
+    exit 1
+  fi
+
   mkdir -p "$CONFIG_DIR"
   echo $$ > "$PID_FILE"
   echo "$TARGET_HOUR" >> "$PID_FILE"
@@ -182,10 +222,10 @@ cmd_run() {
     CURRENT_SEC=$(date +%s)
     TIME_LEFT=$((TARGET_SEC - CURRENT_SEC))
 
-    if [ "$TIME_LEFT" -le 120 ] && [ "$TIME_LEFT" -gt 0 ] && [ "$ALERT_SHOWN" = false ]; then
+    if [ "$TIME_LEFT" -le "${ALERT_BEFORE_SEC:-120}" ] && [ "$TIME_LEFT" -gt 0 ] && [ "$ALERT_SHOWN" = false ]; then
       RESPONSE=$(zenity --question \
         --title="End of work" \
-        --text="System will suspend in 2 minutes ($TARGET_HOUR)." \
+        --text="System will suspend in $(( ALERT_BEFORE_SEC / 60 )) minutes ($TARGET_HOUR)." \
         --ok-label="OK (Wait)" \
         --cancel-label="Cancel" \
         --extra-button="Postpone 5 min" \
@@ -214,7 +254,7 @@ cmd_run() {
 
     xdotool mousemove_relative 1 0
     xdotool mousemove_relative -- -1 0
-    sleep 30
+    sleep "${KEEPALIVE_INTERVAL:-30}"
   done
 }
 
@@ -232,6 +272,8 @@ ENDOFSCRIPT
 # Make script executable and set ownership
 chmod +x "$SCRIPT_PATH"
 chown "$REAL_USER":"$REAL_USER" "$SCRIPT_PATH"
+ln -sf keepalive.sh "$USER_HOME/.local/bin/keepalive"
+chown -h "$REAL_USER":"$REAL_USER" "$USER_HOME/.local/bin/keepalive"
 
 echo "--- Creating icon ---"
 DESKTOP_FILE="$USER_HOME/.local/share/applications/keepalive.desktop"
